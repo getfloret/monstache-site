@@ -6,13 +6,14 @@ Configuration can be specified in environment variables (a limited set of option
 passed into monstache as program arguments on the command line.
 
 !!! note
-	Command line arguments take precedance over environment variables which in turn take precedance over the TOML config file. You can verify
-	the final configuration used by Monstache by running monstache with `-print-config`.
+	Command line arguments take precedance over environment variables which in turn take precedance over the 
+	TOML config file. You can verify the final configuration used by Monstache by running monstache with `-print-config`.
 
 !!! warning
-	Keep simple one-line configs **above** any TOML table definitions in your config file.  A TOML table is only ended by another TOML table or 
-	the end of the file.  Anything below a TOML table will be interpreted to be part of the table by the parser unless it is ended.
-	See the following [Issue 58](https://github.com/rwynn/monstache/issues/58#issuecomment-381275381) for more information.
+	Keep simple one-line configs **above** any TOML table definitions in your config file.  A TOML table 
+	is only ended by another TOML table or the end of the file.  Anything below a TOML table will be 
+	interpreted to be part of the table by the parser unless it is ended. See the following 
+	[Issue 58](https://github.com/rwynn/monstache/issues/58#issuecomment-381275381) for more information.
 
 ## aws-connect
 
@@ -60,6 +61,9 @@ use an empty string as the namespace value.  For example, `change-stream-namespa
 !!! note ""
 	This option may be passed on the command line as ./monstache --change-stream-namespace test.foo
 
+	If specified as an environment variable the value should be namespaces separated only by the `env-delimiter` which
+	defaults to a comma.  E.g. `MONSTACHE_CHANGE_STREAM_NS=test.foo,test.bar`
+
 ## config-database-name
 
 string (default `monstache`) 
@@ -96,6 +100,15 @@ The strategy to use for handling document deletes when custom indexing is done i
 
 **Stategy 2** will completely ignore document deletes in MongoDB.
 
+## direct-read-concur
+
+int (default `0`) 
+
+This option allows you to control the number of namespaces in `direct-read-namespaces` which will be syncing concurrently.
+By default monstache starts reading and syncing all namespaces concurrently.  If this places too much stress on MongoDB then
+you can set this option to an integer greater than 0.  If you set it to `1`, for example, then monstache will sync the
+collections serially.  Numbers greater than 1 allow you to sync collections in batches of that size.
+
 ## direct-read-namespaces
 
 []string (default `nil`) (env var name `MONSTACHE_DIRECT_READ_NS`)
@@ -108,22 +121,45 @@ sync of Mongodb to Elasticsearch.  To do this, set direct-read-namespaces to an 
 like to copy.  Monstache will perform reads directly from the given set of db.collection and sync them to Elasticsearch.
 
 !!! note
-	This option may be passed on the command line as ./monstache --direct-read-namespace test.foo --direct-read-namespace test.bar
+	This option may be passed on the command line as 
+	./monstache --direct-read-namespace test.foo --direct-read-namespace test.bar
+
+	If specified as an environment variable the value should be namespaces separated only by the `env-delimiter` which
+	defaults to a comma.  E.g. `MONSTACHE_DIRECT_READ_NS=test.foo,test.bar`
 
 !!! warning
-	When direct reads are enabled Monstache still processes change events while the direct reads are being performed.  It does
-	not wait until direct reads are completed to start listening for changes.  This is to ensure that any changes that occur during
-	the direct read process get synchronized.
+	When direct reads are enabled Monstache still processes change events while the direct reads are being performed.  
+	It does not wait until direct reads are completed to start listening for changes.  This is to ensure that any 
+	changes that occur during the direct read process get synchronized.
 
 By default, Monstache maps a MongoDB collection named `foo` in a database named `test` to the `test.foo` index in Elasticsearch.
 
-For maximum indexing performance when doing alot of a direct reads you will want to adjust the refresh interval during indexing on the
-destination Elasticsearch indices.  The refresh interval can be set at a global level in elasticsearch.yml or on a per
-index basis by using the Index Settings or Index Template APIs.  For more information see [Update Indices Settings](https://www.elastic.co/guide/en/elasticsearch/reference/current/indices-update-settings.html).
+For maximum indexing performance when doing alot of a direct reads you might want to adjust the refresh interval during 
+indexing on the destination Elasticsearch indices.  The refresh interval can be set at a global level in elasticsearch.yml 
+or on a per index basis by using the Index Settings or Index Template APIs.  
 
-By default, Elasticsearch refreshes every second.  You will want to increase this value or turn off refresh completely during the indexing
-phase by setting the refresh_interval to -1.  Remember to reset the refresh_interval to a positive value and do a force merge after the indexing 
-phase has completed if you decide to temporarily turn off refresh, otherwise you will not be able to see the new documents in queries.
+For more information see 
+[Update Indices Settings](https://www.elastic.co/guide/en/elasticsearch/reference/current/indices-update-settings.html).
+
+By default, Elasticsearch refreshes every second.  You will want to increase this value or turn off refresh completely 
+during the indexing phase by setting the refresh_interval to -1.  Remember to reset the refresh_interval to a 
+positive value and do a force merge after the indexing phase has completed if you decide to temporarily turn off refresh, 
+otherwise you will not be able to see the new documents in queries.
+
+Another way to speed up bulk indexing is to set the number_of_replicas to 0 while indexing and then later increase 
+the number of replicas.  The following index template shows how one might configure a target index for better indexing
+throughput by controlling replicas and the refresh interval. The index template needs to be installed before running monstache.
+
+```
+{
+  "index_patterns": ["test.*"],
+  "settings": {
+    "number_of_shards": 5,
+    "number_of_replicas": 0,
+    "refresh_interval": "30s"
+  }
+}
+```
 
 ## direct-read-split-max
 
@@ -135,6 +171,9 @@ concurrently is separate go routines.  If you increase this value you will notic
 when direct reads are performed.  You will also notice the memory consumption of Monstache grow.  Increasing this value can
 increase the throughput for reading large collections, but you need to have enough memory available to Monstache to do so.
 You can decrease this value for a memory constrained Monstache process.
+
+To disable collection splitting altogether, set this option to `-1`.  In this case monstache will not try to segment the
+collection, but rather use a single cursor for the entire read.
 
 ## disable-change-events
 
@@ -175,6 +214,9 @@ An array of URLs to connect to the Elasticsearch REST Interface
 
 !!! note
 	This option may be passed on the command line as ./monstache --elasticsearch-url URL1 --elasticsearch-url URL2 
+
+	If specified as an environment variable the value should be URLs separated only by the `env-delimiter` which
+	defaults to a comma.  E.g. `MONSTACHE_ES_URLS=http://es1:9200,http://es2:9200`
 
 ## elasticsearch-healthcheck-timeout-startup
 
@@ -262,7 +304,7 @@ string (default `""`) (env var name `MONSTACHE_ES_PEM`)
 When elasticsearch-pem-file is given monstache will use the given file path to add a local certificate to x509 cert
 pool when connecting to Elasticsearch. This should only be used when Elasticsearch is configured with SSL enabled.
 
-## elasticsearch-validate-pem
+## elasticsearch-validate-pem-file
 
 boolean (default `true`)
 
@@ -336,6 +378,9 @@ raw content indexed into Elasticsearch via either the mapper-attachments or inge
 
 !!! note
 	This option may be passed on the command line as ./monstache --file-namespace test.foo --file-namespace test.bar
+
+	If specified as an environment variable the value should be namespaces separated only by the `env-delimiter` which
+	defaults to a comma.  E.g. `MONSTACHE_FILE_NS=test.foo,test.bar`
 
 ## filter
 
@@ -602,7 +647,7 @@ string (default `""`) (env var name `MONSTACHE_MONGO_PEM`)
 When mongo-pem-file is given monstache will use the given file path to add a local certificate to x509 cert
 pool when connecting to MongoDB. This should only be used when MongoDB is configured with SSL enabled.
 
-## mongo-validate-pem
+## mongo-validate-pem-file
 
 boolean (default `true`)
 
@@ -774,6 +819,9 @@ An array of MongoDB namespaces that you would like to enable rfc7396 patches on
 
 !!! note
 	This option may be passed on the command line as ./monstache --patch-namespace test.foo --patch-namespace test.bar 
+
+	If specified as an environment variable the value should be namespaces separated only by the `env-delimiter` which
+	defaults to a comma.  E.g. `MONSTACHE_PATCH_NS=test.foo,test.bar`
 
 ## pipeline
 
@@ -1031,7 +1079,11 @@ This lets you do some cool things but mostly you'll want to sort by `_oplog_date
 Because the indexes are timestamped you can drop then after a period of time so they don't take up space.  If you just want the last couple of days of changes, delete the indexes with the old timestamps.  Elastic [curator](https://github.com/elastic/curator) is your friend here.
 
 !!! note
-	This option may be passed on the command line as ./monstache --time-machine-namespace test.foo --time-machine-namespace test.bar
+	This option may be passed on the command line as 
+	./monstache --time-machine-namespace test.foo --time-machine-namespace test.bar
+
+	If specified as an environment variable the value should be namespaces separated only by the `env-delimiter` which
+	defaults to a comma.  E.g. `MONSTACHE_TIME_MACHINE_NS=test.foo,test.bar`
 
 ## time-machine-index-prefix
 
